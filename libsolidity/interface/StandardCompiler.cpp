@@ -146,6 +146,47 @@ Json::Value collectEVMObject(eth::LinkerObject const& _object, string const* _so
 	return output;
 }
 
+bool isTargetRequired(Json::Value const& _targets, string const& _target)
+{
+	for (auto const& target: _targets)
+		if (target == _target)
+			return true;
+	return false;
+}
+
+///
+/// @_targets is a JSON object containining a two-level hashmap, where the first level is the filename,
+/// the second level is the contract name and the value is an array of target names to be requested for that contract.
+/// @_file is the current file
+/// @_contract is the current contract
+/// @_target is the current target name
+///
+/// Returns true if the _targets has a match for the requested target in the specific file / contract.
+///
+/// In @_targets the use of '*' as a wildcard is permitted.
+///
+/// TODO: optimise this. Perhaps flatten the structure upfront.
+bool isTargetRequired(Json::Value const& _targets, string const& _file, string const& _contract, string const& _target)
+{
+	if (!_targets.isObject())
+		return false;
+
+	for (auto const& file: { string("*"), _file })
+	{
+		if (_targets[file].isObject())
+		{
+			if (isTargetRequired(_targets[_file][_contract], _target))
+				return true;
+			if (isTargetRequired(_targets[_file]["*"], _target))
+				return true;
+			if (isTargetRequired(_targets[_file][""], _target))
+				return true;
+		}
+	}
+
+	return false;
+}
+
 }
 
 Json::Value StandardCompiler::compileInternal(Json::Value const& _input)
