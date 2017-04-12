@@ -245,6 +245,8 @@ Json::Value StandardCompiler::compileInternal(Json::Value const& _input)
 
 	Json::Value const& settings = _input.get("settings", Json::Value());
 
+	Json::Value outputSelection = settings.get("outputSelection", Json::Value());
+
 	vector<string> remappings;
 	for (auto const& remapping: settings.get("remappings", Json::Value()))
 		remappings.push_back(remapping.asString());
@@ -373,7 +375,8 @@ Json::Value StandardCompiler::compileInternal(Json::Value const& _input)
 	{
 		Json::Value sourceResult = Json::objectValue;
 		sourceResult["id"] = sourceIndex++;
-		sourceResult["legacyAST"] = ASTJsonConverter(m_compilerStack.ast(source), m_compilerStack.sourceIndices()).json();
+		if (isTargetRequired(outputSelection, source, "", "legacyAST"))
+			sourceResult["legacyAST"] = ASTJsonConverter(m_compilerStack.ast(source), m_compilerStack.sourceIndices()).json();
 		output["sources"][source] = sourceResult;
 	}
 
@@ -387,20 +390,30 @@ Json::Value StandardCompiler::compileInternal(Json::Value const& _input)
 
 		// ABI, documentation and metadata
 		Json::Value contractData(Json::objectValue);
-		contractData["abi"] = dev::jsonCompactPrint(m_compilerStack.metadata(contractName, DocumentationType::ABIInterface));
-		contractData["metadata"] = m_compilerStack.onChainMetadata(contractName);
-		contractData["userdoc"] = dev::jsonCompactPrint(m_compilerStack.metadata(contractName, DocumentationType::NatspecUser));
-		contractData["devdoc"] = dev::jsonCompactPrint(m_compilerStack.metadata(contractName, DocumentationType::NatspecDev));
+		if (isTargetRequired(outputSelection, file, name, "abi"))
+			contractData["abi"] = dev::jsonCompactPrint(m_compilerStack.metadata(contractName, DocumentationType::ABIInterface));
+		if (isTargetRequired(outputSelection, file, name, "metadata"))
+			contractData["metadata"] = m_compilerStack.onChainMetadata(contractName);
+		if (isTargetRequired(outputSelection, file, name, "userdoc"))
+			contractData["userdoc"] = dev::jsonCompactPrint(m_compilerStack.metadata(contractName, DocumentationType::NatspecUser));
+		if (isTargetRequired(outputSelection, file, name, "devdoc"))
+			contractData["devdoc"] = dev::jsonCompactPrint(m_compilerStack.metadata(contractName, DocumentationType::NatspecDev));
 
 		// EVM
 		Json::Value evmData(Json::objectValue);
 		// @TODO: add ir
 		ostringstream tmp;
-		m_compilerStack.streamAssembly(tmp, contractName, createSourceList(_input), false);
-		evmData["assembly"] = tmp.str();
-		evmData["legacyAssembly"] = m_compilerStack.streamAssembly(tmp, contractName, createSourceList(_input), true);
-		evmData["methodIdentifiers"] = methodIdentifiers(m_compilerStack.contractDefinition(contractName));
-		evmData["gasEstimates"] = m_compilerStack.gasEstimates(contractName);
+		if (isTargetRequired(outputSelection, file, name, "evm.assembly"))
+		{
+			m_compilerStack.streamAssembly(tmp, contractName, createSourceList(_input), false);
+			evmData["assembly"] = tmp.str();
+		}
+		if (isTargetRequired(outputSelection, file, name, "evm.legacyAssembly"))
+			evmData["legacyAssembly"] = m_compilerStack.streamAssembly(tmp, contractName, createSourceList(_input), true);
+		if (isTargetRequired(outputSelection, file, name, "evm.methodIdentifiers"))
+			evmData["methodIdentifiers"] = methodIdentifiers(m_compilerStack.contractDefinition(contractName));
+		if (isTargetRequired(outputSelection, file, name, "evm.gasEstimates"))
+			evmData["gasEstimates"] = m_compilerStack.gasEstimates(contractName);
 
 		evmData["bytecode"] = collectEVMObject(
 			m_compilerStack.object(contractName),
