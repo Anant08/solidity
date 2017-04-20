@@ -225,6 +225,12 @@ BOOST_AUTO_TEST_CASE(basic_compilation)
 			"fileA": {
 				"content": "contract A { }"
 			}
+		},
+		"outputSelection": {
+			"fileA": {
+				"A": [ "abi", "devdoc", "userdoc", "evm", "metadata" ]
+				"": [ "legactAST" ]
+			}
 		}
 	}
 	)";
