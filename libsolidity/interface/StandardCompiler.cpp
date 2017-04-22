@@ -25,6 +25,7 @@
 #include <libsolidity/ast/ASTJsonConverter.h>
 #include <libevmasm/Instruction.h>
 #include <libdevcore/JSON.h>
+#include <libdevcore/SHA3.h>
 
 using namespace std;
 using namespace dev;
@@ -89,6 +90,21 @@ Json::Value formatErrorWithException(
 	}
 
 	return formatError(_warning, _type, _component, message, formattedMessage, location);
+}
+
+/// @_hash contains a Keccak256 hash with the 0x prefix
+/// @_content is the data which needs to be hashed
+/// returns true of the hash of @_content matches @_hash
+bool hashMatchesContent(string const& _hash, string const& _content)
+{
+	try
+	{
+		return dev::h256(_hash) == dev::keccak256(_content);
+	}
+	catch (dev::BadHexCharacter)
+	{
+		return false;
+	}
 }
 
 StringMap createSourceList(Json::Value const& _input)
@@ -165,8 +181,24 @@ Json::Value StandardCompiler::compileInternal(Json::Value const& _input)
 	Json::Value errors = Json::arrayValue;
 
 	for (auto const& sourceName: sources.getMemberNames())
+	{
+		string hash = "";
+		if (sources[sourceName]["keccak256"].isString())
+			hash = sources[sourceName]["keccak256"].asString();
+
 		if (sources[sourceName]["content"].isString())
-			m_compilerStack.addSource(sourceName, sources[sourceName]["content"].asString());
+		{
+			string const& content = sources[sourceName]["content"].asString();
+			if (!hash.empty() && !hashMatchesContent(hash, content))
+				errors.append(formatError(
+					false,
+					"IOError",
+					"general",
+					"Mismatch between content and supplied hash for \"" + sourceName + "\""
+				));
+			else
+				m_compilerStack.addSource(sourceName, content);
+		}
 		else if (sources[sourceName]["urls"].isArray())
 		{
 			if (!m_readFile)
@@ -180,9 +212,19 @@ Json::Value StandardCompiler::compileInternal(Json::Value const& _input)
 				ReadFile::Result result = m_readFile(url.asString());
 				if (result.success)
 				{
-					m_compilerStack.addSource(sourceName, result.contentsOrErrorMessage);
-					found = true;
-					break;
+					if (!hash.empty() && !hashMatchesContent(hash, result.contentsOrErrorMessage))
+						errors.append(formatError(
+							false,
+							"IOError",
+							"general",
+							"Mismatch between content and supplied hash for \"" + url.asString() + "\""
+						));
+					else
+					{
+						m_compilerStack.addSource(sourceName, result.contentsOrErrorMessage);
+						found = true;
+						break;
+					}
 				}
 				else
 					failures.push_back("Cannot import url (\"" + url.asString() + "\"): " + result.contentsOrErrorMessage);
@@ -201,6 +243,7 @@ Json::Value StandardCompiler::compileInternal(Json::Value const& _input)
 		}
 		else
 			return formatFatalError("JSONError", "Invalid input source specified.");
+	}
 
 	Json::Value const& settings = _input.get("settings", Json::Value());
 
